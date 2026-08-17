@@ -1,0 +1,4 @@
+customer_id,customer_unique_id,customer_zip_code_prefix,customer_city,customer_state
+cust_id_1,unique_1,10000,sao paulo,SP
+cust_id_2,unique_1,10000,sao paulo,SP
+cust_id_3,unique_2,20000,rio de janeiro,RJ
