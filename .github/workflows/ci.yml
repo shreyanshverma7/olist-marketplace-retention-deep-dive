@@ -55,6 +55,9 @@ jobs:
       - name: Compile-check the Streamlit app
         run: python3 -m py_compile streamlit_app/app.py streamlit_app/common.py streamlit_app/pages/*.py
 
+      - name: Run the pytest suite
+        run: pytest -v
+
       - name: Run the statistical rigor pass
         run: python3 analysis/statistical_tests.py
 
