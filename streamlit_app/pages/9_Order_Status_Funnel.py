@@ -73,9 +73,12 @@ if funnel_df.empty or funnel_df["orders"].iloc[0] == 0:
 
 kpi_row([
     ("Purchased", f"{int(funnel_df.loc[funnel_df.stage=='purchased','orders'].iloc[0]):,}"),
-    ("Approved", f"{funnel_df.loc[funnel_df.stage=='approved','pct_of_purchased'].iloc[0]:.1f}% of purchased"),
-    ("Shipped", f"{funnel_df.loc[funnel_df.stage=='shipped','pct_of_purchased'].iloc[0]:.1f}% of purchased"),
-    ("Delivered", f"{funnel_df.loc[funnel_df.stage=='delivered','pct_of_purchased'].iloc[0]:.1f}% of purchased"),
+    ("Approved", f"{funnel_df.loc[funnel_df.stage=='approved','pct_of_purchased'].iloc[0]:.1f}%",
+     "% of purchased orders that reached this stage."),
+    ("Shipped", f"{funnel_df.loc[funnel_df.stage=='shipped','pct_of_purchased'].iloc[0]:.1f}%",
+     "% of purchased orders that reached this stage."),
+    ("Delivered", f"{funnel_df.loc[funnel_df.stage=='delivered','pct_of_purchased'].iloc[0]:.1f}%",
+     "% of purchased orders that reached this stage."),
 ])
 
 st.divider()

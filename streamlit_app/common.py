@@ -94,7 +94,13 @@ def inject_custom_css() -> None:
             border-radius: 8px;
             padding: 14px 16px 10px 16px;
         }}
-        [data-testid="stMetricLabel"] {{ opacity: 0.75; }}
+        [data-testid="stMetricLabel"] {{
+            opacity: 0.75;
+            font-size: 0.8rem;
+        }}
+        [data-testid="stMetricValue"] {{
+            font-size: 1.6rem;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -103,6 +109,13 @@ def inject_custom_css() -> None:
 
 def _apply_date_preset(start, end) -> None:
     st.session_state["filter_date_range"] = (start, end)
+
+
+def _reset_filters(start, end) -> None:
+    st.session_state["filter_date_range"] = (start, end)
+    st.session_state["filter_states"] = []
+    st.session_state["filter_categories"] = []
+    st.session_state["filter_payment_types"] = []
 
 
 def render_global_filters() -> Filters:
@@ -146,6 +159,11 @@ def render_global_filters() -> Filters:
     sel_states = st.sidebar.multiselect("Customer state", states, key="filter_states")
     sel_categories = st.sidebar.multiselect("Product category", categories, key="filter_categories")
     sel_payment_types = st.sidebar.multiselect("Payment type", payment_types, key="filter_payment_types")
+
+    st.sidebar.button(
+        "Reset filters", use_container_width=True, type="primary",
+        on_click=_reset_filters, args=(default_start, default_end),
+    )
 
     st.sidebar.caption(
         "Leave a filter empty to include all values. Filters apply live -- "
@@ -216,6 +234,19 @@ def filtered_orders_cte(filters: Filters) -> tuple[str, tuple]:
     )
     """
     return cte, tuple(params)
+
+
+def format_currency_compact(value: float | None) -> str:
+    """R$ with a K/M suffix so a large GMV figure fits on one line inside a
+    KPI card instead of overflowing/truncating a full comma-grouped integer."""
+    if value is None:
+        return "R$ 0"
+    abs_value = abs(value)
+    if abs_value >= 1_000_000:
+        return f"R$ {value / 1_000_000:,.2f}M"
+    if abs_value >= 1_000:
+        return f"R$ {value / 1_000:,.1f}K"
+    return f"R$ {value:,.0f}"
 
 
 def kpi_row(items: list[tuple[str, str]] | list[tuple[str, str, str]]) -> None:

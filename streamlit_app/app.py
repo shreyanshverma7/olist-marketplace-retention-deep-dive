@@ -3,7 +3,7 @@ quantified recommendation -- so a reviewer who only opens the live app (and
 never GitHub) still gets the full story in one skim."""
 
 import streamlit as st
-from common import filtered_orders_cte, kpi_row, render_global_filters, run_query
+from common import filtered_orders_cte, format_currency_compact, kpi_row, render_global_filters, run_query
 
 st.set_page_config(page_title="Olist Retention Deep-Dive", page_icon="📊", layout="wide")
 
@@ -62,7 +62,7 @@ kpi_row([
     ("Orders", f"{int(counts['n_orders']):,}", "Count of orders matching the current filters."),
     ("Unique customers", f"{int(counts['n_customers']):,}", "Distinct customer_unique_id -- the real person, not the per-order customer_id."),
     ("Repeat-purchase rate", f"{counts['repeat_rate']:.2f}%", "% of customers with 2+ orders within the current filter selection."),
-    ("Delivered GMV", f"R$ {revenue:,.0f}" if revenue is not None else "R$ 0", "Sum of item price + freight, delivered orders only."),
+    ("Delivered GMV", format_currency_compact(revenue), "Sum of item price + freight, delivered orders only."),
     ("Avg review score", f"{avg_review:.2f} / 5" if avg_review is not None else "n/a", "Mean review_score (1-5) across reviewed orders in the current filter."),
 ])
 
