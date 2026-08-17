@@ -3,7 +3,13 @@ quantified recommendation -- so a reviewer who only opens the live app (and
 never GitHub) still gets the full story in one skim."""
 
 import streamlit as st
-from common import filtered_orders_cte, format_currency_compact, kpi_row, render_global_filters, run_query
+from common import (
+    filtered_orders_cte,
+    format_currency_compact,
+    kpi_row,
+    render_global_filters,
+    run_query,
+)
 
 st.set_page_config(page_title="Olist Retention Deep-Dive", page_icon="📊", layout="wide")
 
