@@ -80,20 +80,63 @@ class Filters:
     payment_types: list = field(default_factory=list)
 
 
+def inject_custom_css() -> None:
+    """Restyles st.metric into a bordered card with an orange accent, and a
+    couple of other small touches -- still plain st.metric/st.info underneath,
+    just CSS, so it carries zero functional risk."""
+    st.markdown(
+        f"""
+        <style>
+        [data-testid="stMetric"] {{
+            background-color: #1A1A1D;
+            border: 1px solid #2a2a2e;
+            border-left: 3px solid {ORANGE};
+            border-radius: 8px;
+            padding: 14px 16px 10px 16px;
+        }}
+        [data-testid="stMetricLabel"] {{ opacity: 0.75; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _apply_date_preset(start, end) -> None:
+    st.session_state["filter_date_range"] = (start, end)
+
+
 def render_global_filters() -> Filters:
+    inject_custom_css()
     states, categories, payment_types, lo, hi = _filter_options()
+    lo_ts, hi_ts = pd.to_datetime(lo), pd.to_datetime(hi)
 
     # Default to the dense, analytically meaningful window (matches the cohort
     # SQL's own restriction) rather than the full raw range, which includes a
     # near-empty 2016 pilot period and a near-empty 2018-09/10 tail. Full range
     # is still reachable via min_value/max_value.
-    default_start = max(pd.to_datetime(lo), pd.to_datetime("2017-01-01"))
-    default_end = min(pd.to_datetime(hi), pd.to_datetime("2018-08-31"))
+    default_start = max(lo_ts, pd.to_datetime("2017-01-01"))
+    default_end = min(hi_ts, pd.to_datetime("2018-08-31"))
 
     st.sidebar.header("Filters")
+
+    st.sidebar.caption("Quick range (relative to the dataset's last order date)")
+    preset_cols = st.sidebar.columns(3)
+    preset_cols[0].button(
+        "3mo", use_container_width=True,
+        on_click=_apply_date_preset, args=(hi_ts - pd.Timedelta(days=90), hi_ts),
+    )
+    preset_cols[1].button(
+        "6mo", use_container_width=True,
+        on_click=_apply_date_preset, args=(hi_ts - pd.Timedelta(days=180), hi_ts),
+    )
+    preset_cols[2].button(
+        "Full", use_container_width=True,
+        on_click=_apply_date_preset, args=(lo_ts, hi_ts),
+    )
+
     date_range = st.sidebar.date_input(
         "Order date range", value=(default_start, default_end),
-        min_value=pd.to_datetime(lo), max_value=pd.to_datetime(hi), key="filter_date_range",
+        min_value=lo_ts, max_value=hi_ts, key="filter_date_range",
     )
     if isinstance(date_range, tuple) and len(date_range) == 2:
         start_date, end_date = str(date_range[0]), str(date_range[1])
@@ -115,13 +158,25 @@ def render_global_filters() -> Filters:
 def filtered_orders_cte(filters: Filters) -> tuple[str, tuple]:
     """Returns (cte_sql, params). Prepend the CTE with `WITH ... , {cte_sql}`
     (it's written as a bare CTE body, no leading WITH) and join pages' queries
-    to `filtered_orders fo ON fo.order_id = o.order_id`."""
+    to `filtered_orders fo ON fo.order_id = o.order_id`.
+
+    Both the customers join and DISTINCT are conditional, not unconditional --
+    each was measured to cost ~0.3-0.5s on its own at this row count (customers
+    joins on a 32-char TEXT key; DISTINCT sorts ~90k TEXT order_ids), and every
+    page pays this cost on every query since every page calls this function.
+    Only pay for what a given filter selection actually needs: the customers
+    join is only required for the state filter, and DISTINCT is only required
+    when a category/payment-type filter joins in a one-to-many table
+    (order_items/order_payments) that can produce duplicate order_ids.
+    """
     conditions = ["o.order_purchase_timestamp BETWEEN ? AND ?"]
     params: list = [filters.start_date, filters.end_date + " 23:59:59"]
 
-    joins = ["orders o", "JOIN customers c ON o.customer_id = c.customer_id"]
+    joins = ["orders o"]
+    needs_distinct = False
 
     if filters.states:
+        joins.append("JOIN customers c ON o.customer_id = c.customer_id")
         conditions.append(f"c.customer_state IN ({','.join('?' * len(filters.states))})")
         params.extend(filters.states)
 
@@ -134,15 +189,28 @@ def filtered_orders_cte(filters: Filters) -> tuple[str, tuple]:
             f"({','.join('?' * len(filters.categories))})"
         )
         params.extend(filters.categories)
+        needs_distinct = True  # an order can have multiple items, so this join can fan out
 
     if filters.payment_types:
         joins.append("JOIN order_payments pay_f ON pay_f.order_id = o.order_id")
         conditions.append(f"pay_f.payment_type IN ({','.join('?' * len(filters.payment_types))})")
         params.extend(filters.payment_types)
+        needs_distinct = True  # an order can have multiple payment legs, same fan-out risk
 
+    select_clause = "SELECT DISTINCT o.order_id" if needs_distinct else "SELECT o.order_id"
+    # MATERIALIZED (SQLite >=3.35, 2021) forces this CTE to compute once and be
+    # reused everywhere it's referenced. Without it, some pages reference
+    # filtered_orders from two or more places inside one query (e.g. Payments
+    # joins it once for payment ranking and again for customer order history)
+    # -- SQLite's planner doesn't always choose to materialize a CTE on its
+    # own, and inlining it repeatedly inside an already-multi-CTE query was
+    # measured to blow up from ~1s to an unbounded hang (confirmed via
+    # EXPLAIN QUERY PLAN: a full order-date-range scan was being re-run as the
+    # driving loop of a nested join, once per outer reference). Explicit
+    # MATERIALIZED removes the dependency on that planner heuristic entirely.
     cte = f"""
-    filtered_orders AS (
-        SELECT DISTINCT o.order_id
+    filtered_orders AS MATERIALIZED (
+        {select_clause}
         FROM {' '.join(joins)}
         WHERE {' AND '.join(conditions)}
     )
@@ -150,7 +218,18 @@ def filtered_orders_cte(filters: Filters) -> tuple[str, tuple]:
     return cte, tuple(params)
 
 
-def kpi_row(items: list[tuple[str, str]]) -> None:
+def kpi_row(items: list[tuple[str, str]] | list[tuple[str, str, str]]) -> None:
+    """Each item is (label, value) or (label, value, help_text) -- help_text
+    becomes the native st.metric tooltip explaining how the number is computed."""
     cols = st.columns(len(items))
-    for col, (label, value) in zip(cols, items):
-        col.metric(label, value)
+    for col, item in zip(cols, items):
+        label, value = item[0], item[1]
+        help_text = item[2] if len(item) > 2 else None
+        col.metric(label, value, help=help_text)
+
+
+def download_csv_button(df: pd.DataFrame, filename: str, label: str = "Download this data (CSV)") -> None:
+    st.download_button(
+        label, data=df.to_csv(index=False).encode("utf-8"),
+        file_name=filename, mime="text/csv",
+    )

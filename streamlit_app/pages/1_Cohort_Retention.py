@@ -2,10 +2,16 @@
 
 import plotly.express as px
 import streamlit as st
-from common import ORANGE, filtered_orders_cte, render_global_filters, run_query
+from common import (
+    ORANGE,
+    download_csv_button,
+    filtered_orders_cte,
+    render_global_filters,
+    run_query,
+)
 
-st.set_page_config(page_title="Cohort Retention", page_icon=":bar_chart:", layout="wide")
-st.title("Monthly Cohort Retention")
+st.set_page_config(page_title="Cohort Retention", page_icon="🔁", layout="wide")
+st.title("🔁 Monthly Cohort Retention")
 st.caption("SQL: `sql/01_monthly_cohort_retention.sql`")
 
 filters = render_global_filters()
@@ -48,7 +54,8 @@ SELECT t.cohort_month, cs.cohort_size, t.month_number,
 FROM triangle t JOIN cohort_sizes cs ON cs.cohort_month = t.cohort_month
 ORDER BY t.cohort_month, t.month_number
 """
-df = run_query(query, params)
+with st.spinner("Building cohort retention triangle..."):
+    df = run_query(query, params)
 
 if df.empty:
     st.warning("No cohorts in the current filter selection (2017-01 to 2018-08 only -- widen the date range).")
@@ -89,3 +96,11 @@ else:
     fig2.update_layout(xaxis_title="Months since first order", yaxis_title="Retention %")
     st.plotly_chart(fig2, use_container_width=True)
 st.dataframe(cohort_df, use_container_width=True, hide_index=True)
+
+st.info(
+    "**So what:** fewer than 3.2% of customers ever place a second order, and month-1 retention sits "
+    "well under 1% for every cohort with a full observation window -- this is a real-data result, not a "
+    "generator artifact. Retention is a headline problem for this marketplace, not a footnote.",
+    icon="💡",
+)
+download_csv_button(df, "cohort_retention_triangle.csv")

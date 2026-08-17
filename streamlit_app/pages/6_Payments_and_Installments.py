@@ -4,13 +4,14 @@ import plotly.express as px
 import streamlit as st
 from common import (
     PAYMENT_TYPE_COLORS,
+    download_csv_button,
     filtered_orders_cte,
     render_global_filters,
     run_query,
 )
 
-st.set_page_config(page_title="Payments and Installments", page_icon=":bar_chart:", layout="wide")
-st.title("Payments & Installments")
+st.set_page_config(page_title="Payments and Installments", page_icon="💳", layout="wide")
+st.title("💳 Payments & Installments")
 st.caption("SQL: `sql/06_payment_installments_vs_order_value_and_repeat.sql`")
 
 filters = render_global_filters()
@@ -41,7 +42,8 @@ SELECT
 FROM agg WHERE primary_type IS NOT NULL AND primary_type != 'not_defined'
 GROUP BY installment_bucket, primary_type
 """
-value_df = run_query(value_query, params)
+with st.spinner("Analyzing payments..."):
+    value_df = run_query(value_query, params)
 
 # order_seq comes from the precomputed customer_order_seq table (see
 # database/build_olist_db.py) -- no ROW_NUMBER() recomputation here.
@@ -100,3 +102,15 @@ with col2:
     )
     fig2.update_layout(showlegend=False)
     st.plotly_chart(fig2, use_container_width=True)
+
+st.info(
+    "**So what:** order value scales cleanly with installment count (R$103 for a single payment vs. "
+    "R$373+ for 11+ installments), but repeat-purchase rate is roughly flat across payment types -- "
+    "payment method is not a lever for retention, it's a lever for average order value.",
+    icon="💡",
+)
+col1, col2 = st.columns(2)
+with col1:
+    download_csv_button(value_df, "payments_order_value.csv")
+with col2:
+    download_csv_button(repeat_df, "payments_repeat_rate.csv")

@@ -2,10 +2,16 @@
 
 import plotly.express as px
 import streamlit as st
-from common import ORANGE, filtered_orders_cte, render_global_filters, run_query
+from common import (
+    ORANGE,
+    download_csv_button,
+    filtered_orders_cte,
+    render_global_filters,
+    run_query,
+)
 
-st.set_page_config(page_title="Logistics & Freight", page_icon=":bar_chart:", layout="wide")
-st.title("Freight Cost Concentration by Region")
+st.set_page_config(page_title="Logistics & Freight", page_icon="📦", layout="wide")
+st.title("📦 Freight Cost Concentration by Region")
 st.caption("SQL: `sql/07_freight_cost_ratio_by_region.sql`")
 
 filters = render_global_filters()
@@ -31,7 +37,8 @@ SELECT seller_state, COUNT(*) AS items,
 FROM item_freight GROUP BY seller_state HAVING COUNT(*) >= 30
 ORDER BY avg_freight_ratio DESC
 """
-df = run_query(query, params)
+with st.spinner("Computing freight ratios by state..."):
+    df = run_query(query, params)
 
 if df.empty:
     st.info("No items in the current filter selection (states with fewer than 30 items are dropped).")
@@ -49,3 +56,11 @@ st.caption(
     "Bar color shows each state's bad-review rate (score <= 2)."
 )
 st.dataframe(df, use_container_width=True, hide_index=True)
+
+st.info(
+    "**So what:** freight ratio varies nearly 3x by seller state (CE at 0.39 vs. BA at 0.13). The "
+    "highest-ratio states (CE, ES, GO, DF) are the natural first targets for logistics investment, since "
+    "delivery delay is the strongest single driver of bad reviews found in this project.",
+    icon="💡",
+)
+download_csv_button(df, "freight_ratio_by_state.csv")

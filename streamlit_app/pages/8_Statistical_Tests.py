@@ -10,11 +10,16 @@ table copied from the CLI script's output.
 import numpy as np
 import pandas as pd
 import streamlit as st
-from common import filtered_orders_cte, render_global_filters, run_query
+from common import (
+    download_csv_button,
+    filtered_orders_cte,
+    render_global_filters,
+    run_query,
+)
 from scipy import stats
 
-st.set_page_config(page_title="Statistical Tests", page_icon=":bar_chart:", layout="wide")
-st.title("Statistical Rigor Pass")
+st.set_page_config(page_title="Statistical Tests", page_icon="🧪", layout="wide")
+st.title("🧪 Statistical Rigor Pass")
 st.caption("Also runnable standalone: `python3 analysis/statistical_tests.py` (unfiltered, full dataset).")
 
 filters = render_global_filters()
@@ -174,10 +179,20 @@ for name, t in tests.items():
         f"Naive a={alpha}": "significant" if t["p"] <= alpha else "not sig.",
         "Holm-Bonferroni": "significant" if verdicts[name] else "not sig.",
     })
-st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+results_df = pd.DataFrame(rows)
+st.dataframe(results_df, use_container_width=True, hide_index=True)
 
 st.caption(
     f"Family of {len(tests)} tests under the current filter selection, Holm-Bonferroni family-wise alpha = {alpha}. "
     "Narrowing the filters changes sample sizes and can flip a verdict -- that's expected, not a bug: "
     "smaller filtered samples have less power to detect the same effect."
 )
+
+st.info(
+    "**So what:** the correction does real work on the unfiltered full dataset -- the payment-type "
+    "repeat-rate comparison clears a naive p<0.05 but is correctly reclassified as noise once judged "
+    "against the family-wise bar. That's the difference between recommending a payment-method "
+    "investigation and correctly declining to.",
+    icon="💡",
+)
+download_csv_button(results_df, "statistical_tests_results.csv")

@@ -67,7 +67,7 @@ jobs:
             curl -sf http://localhost:8501 > /dev/null && break
             sleep 1
           done
-          for page in "" Cohort_Retention Repeat_Purchase Category_Drilldown Delivery_vs_Reviews Revenue_Concentration Payments_and_Installments Logistics_Freight Statistical_Tests; do
+          for page in "" Cohort_Retention Repeat_Purchase Category_Drilldown Delivery_vs_Reviews Revenue_Concentration Payments_and_Installments Logistics_Freight Statistical_Tests Order_Status_Funnel Customer_Segments_RFM; do
             echo "checking /$page"
             curl -sf "http://localhost:8501/$page" > /dev/null
           done

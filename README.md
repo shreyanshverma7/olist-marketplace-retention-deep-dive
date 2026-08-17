@@ -18,7 +18,7 @@ I analysed 99,441 real orders from Olist, a Brazilian e-commerce marketplace (20
 **Recommendation, prioritized and quantified:**
 
 1. **Fix delivery-estimate accuracy and late-shipment logistics first.** It's the single largest, most statistically robust lever on satisfaction found in this analysis -- a 44.8-point swing in bad-review rate (54.0% vs. 9.2%) between late and on-time orders, on a sample of 96k+ orders. Target the highest-freight-ratio seller states first (CE, ES, GO, DF all sit above a 0.36 freight/price ratio -- see [Logistics](#7-freight-cost-concentration-by-region--sqlfreight_cost_ratio_by_regionsql)), since they're the likeliest source of delivery delay.
-2. **Build a second-purchase program, not just an acquisition funnel.** With repeat-purchase rate at 3.12% and a median 27.9 days between 1st and 2nd order, there's a real but narrow window to re-engage a first-time buyer before they're gone for good. `bed_bath_table` customers are the strongest repeat-purchase segment (15.06% share of repeat-purchase items vs. 9.68% of first-purchase items) -- a natural place to pilot a win-back campaign.
+2. **Build a second-purchase program, not just an acquisition funnel.** With repeat-purchase rate at 3.12% and a median 27.9 days between 1st and 2nd order, there's a real but narrow window to re-engage a first-time buyer before they're gone for good. `bed_bath_table` customers are the strongest repeat-purchase segment, and the 15,135 lapsed high-value one-time customers (see [Customer Segments](#9-customer-segments-rfm-adapted--sqlcustomer_segments_rfmsql)) are a concrete win-back target.
 3. **Treat seller concentration as a platform risk, not just a revenue fact.** At 52.3% of GMV from the top 5% of sellers, a seller-retention/diversification program is a bigger structural priority than deepening the customer base, where revenue is comparatively well spread (top 5% of customers = only 26.8% of GMV).
 
 ## Data
@@ -44,7 +44,7 @@ The [Olist Brazilian E-Commerce dataset](https://www.kaggle.com/datasets/olistbr
 
 Olist's schema gives **every order a new `customer_id`** -- it is not a stable customer key. `customer_unique_id` is the real person, and is what every cohort, repeat-purchase, and "first vs. repeat" query in this project groups by. Getting this backwards silently makes every customer look like a one-time buyer (which is exactly what a naive first pass at this dataset produces). 96,096 unique people placed 99,441 orders.
 
-## The 7 questions
+## The 9 questions
 
 ### 1. Monthly cohort retention triangle — [`sql/01_monthly_cohort_retention.sql`](sql/01_monthly_cohort_retention.sql)
 
@@ -132,6 +132,42 @@ Order value scales cleanly with installment count -- customers financing a purch
 
 Freight ratio (freight_value / price, comparable across cheap and expensive items) varies nearly 3x by seller state. The intuitive link to bad-review rate is directionally there (r = 0.346 across the 17 states with enough volume) but **does not** reach significance at the state-aggregated level (p = 0.173, n = 17 -- see caveat below). Treat this as a lead for a properly powered, order-level follow-up, not a proven driver.
 
+### 8. Order-status funnel — [`sql/08_order_status_funnel.sql`](sql/08_order_status_funnel.sql)
+
+`order_status` is a terminal label, not an event log, so this funnel is built from the timestamp columns instead, which really do capture stage progression:
+
+| Stage | Orders | % of purchased | % of prior stage |
+|---|---:|---:|---:|
+| Purchased | 99,441 | 100.0% | -- |
+| Approved | 99,281 | 99.84% | 99.84% |
+| Shipped | 97,658 | 98.21% | 98.37% |
+| Delivered | 96,476 | 97.02% | 98.79% |
+
+The funnel itself is shallow -- the real signal is *where* the 1,254 `canceled`/`unavailable` orders get stuck:
+
+| Status | Furthest stage reached | Orders |
+|---|---|---:|
+| unavailable | reached_approved | 609 (100% of unavailable) |
+| canceled | reached_approved | 409 (65%) |
+| canceled | never_approved | 141 (23%) |
+| canceled | reached_shipped | 75 (12%) |
+
+**Every single `unavailable` order** got stuck at "approved but never shipped" -- a stock/inventory signal, not a payment problem. `canceled` orders spread across every stage, with the largest share (65%) canceled after approval but before shipping, pointing at the fulfillment gap between payment and dispatch as the place to investigate first.
+
+### 9. Customer segments (RFM, adapted) — [`sql/09_customer_segments_rfm.sql`](sql/09_customer_segments_rfm.sql)
+
+Standard 5-way Recency/Frequency/Monetary quintile scoring doesn't fit this dataset honestly -- frequency is degenerate (96.9% of customers have exactly 1 order). Instead: a real repeat-vs-one-time split, then a monetary tercile × recency-half split *within* one-time customers only, so it isn't diluted by repeat customers' typically higher spend.
+
+| Segment | Customers | % of customers | % of revenue |
+|---|---:|---:|---:|
+| One-time: High value / Recent | 15,898 | 16.5% | 32.8% |
+| One-time: High value / Lapsed | 15,135 | 15.8% | 31.7% |
+| One-time: Mid value | 31,033 | 32.3% | 20.9% |
+| **Repeat customers** | **2,997** | **3.1%** | **5.8%** |
+| One-time: Low value | 31,033 | 32.3% | 8.7% |
+
+One-time high-value customers (recent + lapsed combined) drive roughly **two-thirds of total revenue**, while repeat customers -- despite spending ~2x more per person on average (R$300 vs. R$156) -- contribute under 6% of revenue simply because there are so few of them. The revenue backbone of this marketplace is big one-time spenders, not loyal repeat buyers, precisely *because* repeat behavior barely exists here (see Q2). A win-back campaign aimed at the 15,135 lapsed high-value one-time customers is a concrete, sizeable target.
+
 ## Statistical rigor pass — [`analysis/statistical_tests.py`](analysis/statistical_tests.py)
 
 Every rate/segment comparison above was tested for whether the spread is distinguishable from chance. These five tests form **one family**, so each is judged twice: against a naive α = 0.05, and against **Holm-Bonferroni** correction (chosen over flat Bonferroni for slightly more power while still controlling the family-wise error rate).
@@ -154,13 +190,15 @@ The correction does real work here: the payment-type result clears a naive thres
 
 **[Live demo →](https://olist-marketplace-retention-deep-dive.streamlit.app/)** — hosted free on Streamlit Community Cloud.
 
-A real multi-page app running live queries against `database/olist.db`, not a static export:
+A real 11-page app running live queries against `database/olist.db`, not a static export:
 
-- **Global filters** (order date range, customer state, product category, payment type) in the sidebar, shared across every page via session state
+- **Global filters** (order date range with quick 3mo/6mo/full-window presets, customer state, product category, payment type) in the sidebar, shared across every page via session state
 - **Drill-downs** — pick a cohort to see its retention curve in detail; pick a category to see the retention rate for customers whose *first-ever* purchase was in that category
 - **Live queries** — every chart re-runs its SQL against the current filter selection; nothing is a cached CSV export
-- **A KPI header row** on the home page (orders, unique customers, repeat-purchase rate, delivered GMV, avg review score)
+- **An executive-summary home page** — KPI header, top-3 findings, and the full prioritized recommendation, so a reviewer who never opens GitHub still gets the complete story
 - **A live statistical-tests page** that recomputes all five significance tests (and the Holm-Bonferroni verdicts) against whatever the sidebar filters are currently set to
+- **Methodology tooltips** on every KPI (hover the ⓘ) explaining exactly how each number is computed, and a CSV download of the underlying result set on every page
+- **"So what" callouts** on every analytical page, so the finding and its relevance to the recommendation are visible in-app, not just in this README
 
 ![Delivery vs. Reviews: bucketed bad-review rate, late vs. on-time, with live Pearson correlation](screenshots/delivery-vs-reviews.png)
 

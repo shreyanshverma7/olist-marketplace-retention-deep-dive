@@ -4,14 +4,15 @@ import plotly.express as px
 import streamlit as st
 from common import (
     ORANGE,
+    download_csv_button,
     filtered_orders_cte,
     kpi_row,
     render_global_filters,
     run_query,
 )
 
-st.set_page_config(page_title="Repeat Purchase", page_icon=":bar_chart:", layout="wide")
-st.title("Repeat-Purchase Rate & Time to 2nd Order")
+st.set_page_config(page_title="Repeat Purchase", page_icon="⏱️", layout="wide")
+st.title("⏱️ Repeat-Purchase Rate & Time to 2nd Order")
 st.caption("SQL: `sql/02_repeat_purchase_rate_and_time_to_second_order.sql`")
 
 filters = render_global_filters()
@@ -35,7 +36,8 @@ SELECT
     ROUND(100.0 * SUM(CASE WHEN total_orders >= 2 THEN 1 ELSE 0 END) / COUNT(*), 2) AS repeat_rate
 FROM per_customer
 """
-kpis = run_query(kpi_query, params).iloc[0]
+with st.spinner("Computing repeat-purchase rate..."):
+    kpis = run_query(kpi_query, params).iloc[0]
 
 gaps_query = f"""
 WITH {cte},
@@ -54,9 +56,9 @@ FROM customer_orders WHERE order_seq = 2
 gaps_df = run_query(gaps_query, params)
 
 kpi_row([
-    ("Total customers", f"{int(kpis['total_customers']):,}"),
-    ("Repeat customers", f"{int(kpis['repeat_customers']):,}"),
-    ("Repeat-purchase rate", f"{kpis['repeat_rate']:.2f}%"),
+    ("Total customers", f"{int(kpis['total_customers']):,}", "Unique customer_unique_id in the current filter selection."),
+    ("Repeat customers", f"{int(kpis['repeat_customers']):,}", "Customers with 2+ orders in the current filter selection."),
+    ("Repeat-purchase rate", f"{kpis['repeat_rate']:.2f}%", "Repeat customers / total customers."),
     ("Avg days to 2nd order", f"{gaps_df['days_to_2nd_order'].mean():.1f}" if not gaps_df.empty else "n/a"),
     ("Median days to 2nd order", f"{gaps_df['days_to_2nd_order'].median():.1f}" if not gaps_df.empty else "n/a"),
 ])
@@ -68,3 +70,11 @@ else:
     fig = px.histogram(gaps_df, x="days_to_2nd_order", nbins=40, color_discrete_sequence=[ORANGE])
     fig.update_layout(xaxis_title="Days between 1st and 2nd order", yaxis_title="Customers")
     st.plotly_chart(fig, use_container_width=True)
+
+    st.info(
+        "**So what:** the gap distribution is sharply right-skewed -- most customers who do come back, "
+        "come back fast (median 27.9 days vs. a mean of 80.3). There's a real but narrow window to "
+        "re-engage a first-time buyer before they're gone for good.",
+        icon="💡",
+    )
+    download_csv_button(gaps_df, "repeat_purchase_gaps.csv")
