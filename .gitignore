@@ -1,0 +1,24 @@
+# Raw Kaggle data -- not redistributed; see NOTICE.md and README "Reproduce"
+data/raw/
+archive.zip
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.ruff_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+
+# Raw macOS screenshot captures -- kept locally, renamed copies are tracked instead
+screenshots/Screenshot*.png
+
+# Editors
+.vscode/
+.idea/

@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: DB smoke test -- committed olist.db has the expected tables and rows
+        run: |
+          set -e
+          python3 - <<'EOF'
+          import sqlite3
+          conn = sqlite3.connect("database/olist.db")
+          expected_tables = {
+              "customers", "orders", "order_items", "order_payments",
+              "order_reviews", "products", "sellers", "category_translation",
+              "customer_order_seq",
+          }
+          tables = {r[0] for r in conn.execute(
+              "SELECT name FROM sqlite_master WHERE type='table'"
+          )}
+          missing = expected_tables - tables
+          assert not missing, f"missing tables: {missing}"
+          for t in expected_tables:
+              n = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+              assert n > 0, f"table {t} is empty"
+          print("OK: all expected tables present and non-empty")
+          EOF
+
+      - name: Run every SQL deliverable against the database
+        run: |
+          set -e
+          for f in sql/*.sql; do
+            echo "== $f =="
+            sqlite3 database/olist.db < "$f" > /dev/null
+          done
+
+      - name: Compile-check the Streamlit app
+        run: python3 -m py_compile streamlit_app/app.py streamlit_app/common.py streamlit_app/pages/*.py
+
+      - name: Run the statistical rigor pass
+        run: python3 analysis/statistical_tests.py
+
+      - name: Smoke-test the Streamlit app boots and every page responds
+        run: |
+          set -e
+          streamlit run streamlit_app/app.py --server.headless true --server.port 8501 &
+          APP_PID=$!
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8501 > /dev/null && break
+            sleep 1
+          done
+          for page in "" Cohort_Retention Repeat_Purchase Category_Drilldown Delivery_vs_Reviews Revenue_Concentration Payments_and_Installments Logistics_Freight Statistical_Tests; do
+            echo "checking /$page"
+            curl -sf "http://localhost:8501/$page" > /dev/null
+          done
+          kill $APP_PID
